@@ -1,0 +1,1007 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dodge Dot — Can You Click It?</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:     #0d0d1a;
+      --grid:   rgba(100,100,200,0.05);
+      --cyan:   #00f5d4;
+      --yellow: #ffe600;
+      --red:    #ff3b5c;
+      --purple: #9b5de5;
+      --white:  #f0f0ff;
+      --dim:    #555577;
+      --panel:  rgba(20,20,45,0.92);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Press Start 2P', monospace;
+      background: var(--bg);
+      color: var(--white);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      overflow-x: hidden;
+    }
+
+    /* CRT scanlines */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent 0px, transparent 3px,
+        rgba(0,0,0,0.10) 3px, rgba(0,0,0,0.10) 4px
+      );
+      pointer-events: none;
+      z-index: 9998;
+    }
+
+    /* Dot grid */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: radial-gradient(var(--grid) 1px, transparent 1px);
+      background-size: 28px 28px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Header ── */
+    header {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 720px;
+      padding: 22px 20px 6px;
+      text-align: center;
+    }
+    .logo {
+      font-size: clamp(18px, 5vw, 28px);
+      color: var(--cyan);
+      text-shadow: 0 0 12px var(--cyan), 0 0 30px rgba(0,245,212,0.3);
+      letter-spacing: 2px;
+    }
+    .logo span { color: var(--yellow); text-shadow: 0 0 12px var(--yellow); }
+    .tagline {
+      margin-top: 7px;
+      font-size: 7px;
+      color: var(--dim);
+      letter-spacing: 1px;
+    }
+
+    /* ── HUD bar — hidden on menu, visible in-game ── */
+    #hud {
+      position: relative;
+      z-index: 10;
+      width: 100%;
+      max-width: 720px;
+      display: none; /* shown only while game is active */
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 20px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    #hud.visible { display: flex; }
+
+    /* Player chip shown in HUD */
+    #playerChip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 7px;
+      color: var(--cyan);
+    }
+    #playerChip .chip-avatar { font-size: 18px; line-height: 1; }
+    #playerChip .chip-name   { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .sb-item { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+    .sb-label { color: var(--dim); font-size: 6px; }
+    .sb-val   { color: var(--yellow); font-size: 11px; }
+    #timerVal { color: var(--cyan); }
+    #timerVal.warn { color: var(--red); animation: blink 0.5s step-end infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* Pause button */
+    #pauseBtn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px;
+      padding: 7px 12px;
+      border: 2px solid var(--dim);
+      background: transparent;
+      color: var(--dim);
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: border-color 0.15s, color 0.15s;
+    }
+    #pauseBtn:hover { border-color: var(--yellow); color: var(--yellow); }
+
+    /* ── Progress bar ── */
+    #progressWrap {
+      position: relative;
+      z-index: 10;
+      width: 90vw;
+      max-width: 700px;
+      height: 5px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 2px;
+      margin-top: 2px;
+      overflow: hidden;
+      display: none;
+    }
+    #progressWrap.visible { display: block; }
+    #progressBar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--purple), var(--cyan));
+      border-radius: 2px;
+      transition: width 1s linear;
+    }
+
+    /* ── Arena ── */
+    #arena {
+      position: relative;
+      z-index: 10;
+      width: 90vw;
+      max-width: 700px;
+      height: 420px;
+      background: var(--panel);
+      border: 2px solid var(--purple);
+      border-radius: 4px;
+      box-shadow: 0 0 0 1px rgba(155,93,229,0.15),
+                  0 0 40px rgba(155,93,229,0.08),
+                  inset 0 0 60px rgba(0,0,0,0.4);
+      overflow: hidden;
+      cursor: crosshair;
+      user-select: none;
+      margin-top: 6px;
+    }
+
+    /* ── Target sprite ── */
+    #target {
+      position: absolute;
+      width: 72px;
+      height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 44px;
+      cursor: pointer;
+      will-change: left, top;
+      filter: drop-shadow(0 0 8px rgba(0,245,212,0.6));
+      transition: left 0.12s ease-out, top 0.12s ease-out;
+    }
+    #target.hit { animation: hitPop 0.18s ease forwards; }
+    @keyframes hitPop {
+      0%   { transform: scale(1.5) rotate(-8deg); }
+      60%  { transform: scale(0.9) rotate(4deg); }
+      100% { transform: scale(1) rotate(0deg); }
+    }
+
+    /* ── Float labels ── */
+    .floatScore {
+      position: absolute;
+      font-size: 8px;
+      color: var(--yellow);
+      pointer-events: none;
+      animation: floatUp 0.9s ease-out forwards;
+      text-shadow: 0 0 6px var(--yellow);
+      z-index: 20;
+    }
+    .missFlash {
+      position: absolute;
+      font-size: 7px;
+      color: var(--red);
+      pointer-events: none;
+      animation: floatUp 0.7s ease-out forwards;
+      z-index: 20;
+    }
+    @keyframes floatUp {
+      from { opacity: 1; transform: translateY(0); }
+      to   { opacity: 0; transform: translateY(-55px); }
+    }
+
+    /* ── Combo badge ── */
+    #comboBadge {
+      position: absolute;
+      top: 10px; right: 10px;
+      font-size: 7px;
+      color: var(--cyan);
+      background: rgba(0,245,212,0.1);
+      border: 1px solid var(--cyan);
+      padding: 4px 8px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 20;
+    }
+    #comboBadge.show { opacity: 1; }
+
+    /* ── Overlays ── */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10,10,25,0.93);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 100;
+      padding: 20px;
+      text-align: center;
+    }
+    .overlay.hidden { display: none; }
+
+    .ov-title {
+      font-size: clamp(12px, 3vw, 18px);
+      line-height: 1.6;
+    }
+    .ov-title.cyan { color: var(--cyan); text-shadow: 0 0 14px var(--cyan); }
+    .ov-title.red  { color: var(--red);  text-shadow: 0 0 14px var(--red);  }
+    .ov-title.gold { color: var(--yellow); text-shadow: 0 0 14px var(--yellow); }
+    .ov-sub { font-size: 6px; color: var(--dim); line-height: 2.2; }
+
+    /* ── Player setup (inside start overlay) ── */
+    .menu-intro {
+      margin-top: -8px;
+      color: var(--dim);
+      letter-spacing: 1px;
+    }
+
+    .setup-row {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 340px;
+    }
+
+    /* Avatar picker */
+    .avatar-label {
+      font-size: 5px;
+      color: var(--dim);
+      align-self: flex-start;
+    }
+    .avatar-grid {
+      display: flex;
+      gap: 6px;
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      overflow-x: auto;
+      width: 100%;
+      padding: 2px 2px 7px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--dim) transparent;
+    }
+    .av-btn {
+      flex: 0 0 36px;
+      font-size: 19px;
+      width: 36px; height: 36px;
+      background: rgba(255,255,255,0.04);
+      border: 2px solid var(--dim);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: border-color 0.15s, background 0.15s;
+      line-height: 1;
+    }
+    .av-btn:hover    { border-color: var(--cyan); background: rgba(0,245,212,0.08); }
+    .av-btn.selected { border-color: var(--cyan); background: rgba(0,245,212,0.14);
+                       box-shadow: 0 0 8px rgba(0,245,212,0.3); }
+
+    /* Name input */
+    .name-label { font-size: 6px; color: var(--dim); align-self: flex-start; }
+    #playerNameInput {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 9px;
+      width: 100%;
+      padding: 9px 12px;
+      background: rgba(255,255,255,0.04);
+      border: 2px solid var(--dim);
+      border-radius: 4px;
+      color: var(--white);
+      outline: none;
+      transition: border-color 0.15s;
+      letter-spacing: 1px;
+    }
+    #playerNameInput::placeholder { color: var(--dim); }
+    #playerNameInput:focus { border-color: var(--cyan); }
+
+    /* Divider */
+    .divider { width: 100%; max-width: 340px; border: none; border-top: 1px solid rgba(255,255,255,0.07); }
+
+    /* Mode grid */
+    .mode-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      width: 100%;
+      max-width: 340px;
+    }
+    .mode-card {
+      border: 2px solid var(--dim);
+      padding: 10px 4px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      align-items: center;
+      border-radius: 2px;
+    }
+    .mode-card:hover      { border-color: var(--cyan); background: rgba(0,245,212,0.06); }
+    .mode-card .mode-icon { font-size: 20px; }
+    .mode-card .mode-name { font-size: 6px; color: var(--white); }
+    .mode-card .mode-desc { font-size: 5px; color: var(--dim); line-height: 1.8; text-align: center; }
+
+    /* Generic button */
+    .btn {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 9px;
+      padding: 11px 22px;
+      border: 2px solid var(--cyan);
+      background: transparent;
+      color: var(--cyan);
+      cursor: pointer;
+      letter-spacing: 1px;
+      transition: background 0.15s, color 0.15s;
+    }
+    .btn:hover        { background: var(--cyan); color: var(--bg); }
+    .btn.red-btn      { border-color: var(--red); color: var(--red); }
+    .btn.red-btn:hover{ background: var(--red); color: #fff; }
+
+    /* Stat rows on results */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      width: 270px;
+      font-size: 7px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 5px 0;
+    }
+    .stat-row .label { color: var(--dim); }
+    .stat-row .val   { color: var(--yellow); }
+
+    /* Particles */
+    .pixel-particle {
+      position: fixed;
+      width: 6px; height: 6px;
+      pointer-events: none;
+      z-index: 9997;
+      animation: particleDrop 1.3s ease-out forwards;
+    }
+    @keyframes particleDrop {
+      0%   { opacity: 1; transform: translate(0, 0) rotate(0deg); }
+      100% { opacity: 0; transform: translate(var(--tx), var(--ty)) rotate(720deg); }
+    }
+
+    /* ── How to play footer ── */
+    #howToPlay {
+      position: relative;
+      z-index: 10;
+      margin-top: 14px;
+      margin-bottom: 20px;
+      text-align: center;
+      padding: 0 20px;
+    }
+    #howToPlay p {
+      font-size: 6px;
+      color: var(--dim);
+      line-height: 2.4;
+      max-width: 600px;
+    }
+    #howToPlay p strong {
+      color: var(--cyan);
+      font-weight: normal;
+    }
+
+    @media (max-width: 520px) {
+      #arena { height: 340px; }
+      .mode-grid { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">DODGE <span>DOT</span></div>
+  <div class="tagline">// click the sprite before it escapes //</div>
+</header>
+
+<!-- HUD: only visible during gameplay -->
+<div id="hud" aria-hidden="true">
+  <div id="playerChip">
+    <span class="chip-avatar" id="hudAvatar">🛸</span>
+    <span class="chip-name"   id="hudName">PLAYER</span>
+  </div>
+  <div class="sb-item">
+    <span class="sb-label">SCORE</span>
+    <span class="sb-val" id="scoreVal">0</span>
+  </div>
+  <div class="sb-item">
+    <span class="sb-label">COMBO</span>
+    <span class="sb-val" id="comboVal">x1</span>
+  </div>
+  <div class="sb-item">
+    <span class="sb-label">MISSES</span>
+    <span class="sb-val" id="missesVal">0</span>
+  </div>
+  <div class="sb-item">
+    <span class="sb-label">TIME</span>
+    <span class="sb-val" id="timerVal">--</span>
+  </div>
+  <button id="pauseBtn" aria-label="Pause game">⏸ PAUSE</button>
+</div>
+
+<div id="progressWrap" aria-hidden="true">
+  <div id="progressBar" style="width:100%"></div>
+</div>
+
+<div id="arena" role="application" aria-label="Game arena">
+
+  <!-- ════ START / SETUP SCREEN ════ -->
+  <div class="overlay" id="startScreen">
+    <div class="ov-title cyan">LET'S PLAY!</div>
+    <div class="ov-sub menu-intro">MAKE YOUR PLAYER</div>
+
+    <div class="setup-row">
+      <span class="avatar-label">PICK YOUR AVATAR</span>
+      <div class="avatar-grid" id="avatarGrid">
+        <!-- filled by JS -->
+      </div>
+    </div>
+
+    <div class="setup-row">
+      <span class="name-label">ENTER YOUR NAME</span>
+      <input
+        id="playerNameInput"
+        type="text"
+        maxlength="12"
+        placeholder="PLAYER"
+        autocomplete="off"
+        spellcheck="false"
+      />
+    </div>
+
+    <hr class="divider" />
+
+    <div class="ov-sub">CHOOSE DIFFICULTY TO START</div>
+    <div class="mode-grid">
+      <div class="mode-card" data-mode="easy" role="button" tabindex="0">
+        <div class="mode-icon">🐢</div>
+        <div class="mode-name">EASY</div>
+        <div class="mode-desc">Big target<br>Slow dodge<br>75 sec</div>
+      </div>
+      <div class="mode-card" data-mode="normal" role="button" tabindex="0">
+        <div class="mode-icon">⚡</div>
+        <div class="mode-name">NORMAL</div>
+        <div class="mode-desc">Faster dodge<br>45 sec<br>5 miss max</div>
+      </div>
+      <div class="mode-card" data-mode="hard" role="button" tabindex="0">
+        <div class="mode-icon">💀</div>
+        <div class="mode-name">HARD</div>
+        <div class="mode-desc">Hyper dodge<br>30 sec<br>3 miss max</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════ PAUSE SCREEN ════ -->
+  <div class="overlay hidden" id="pauseScreen">
+    <div class="ov-title gold">PAUSED</div>
+    <div class="ov-sub">take a breath...</div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+      <button class="btn" id="resumeBtn">▶ RESUME</button>
+      <button class="btn red-btn" id="quitBtn">✕ QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <!-- ════ GAME OVER SCREEN ════ -->
+  <div class="overlay hidden" id="gameOverScreen">
+    <div class="ov-title" id="goTitle">GAME OVER</div>
+    <div id="statTable"></div>
+    <div id="goRating" style="font-size:9px;color:var(--yellow);margin-top:4px;"></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-top:4px;">
+      <button class="btn" id="retryBtn">RETRY</button>
+      <button class="btn red-btn" id="menuBtn">MENU</button>
+    </div>
+  </div>
+
+  <!-- TARGET -->
+  <div id="target" role="button" aria-label="Click me!">🛸</div>
+
+  <!-- COMBO BADGE -->
+  <div id="comboBadge" aria-live="polite"></div>
+
+</div>
+
+<!-- ════ HOW TO PLAY ════ -->
+<div id="howToPlay">
+  <p>
+    <strong>Catch the dot</strong> before it moves away — click fast and keep your focus.<br>
+    <strong>Choose a difficulty</strong>, pick your avatar, enter your name, and see how long you can survive.
+  </p>
+</div>
+
+<script>
+/* ════════════════════════════════════════
+   DODGE DOT  —  arcade clicking game
+   Single-file, zero dependencies
+════════════════════════════════════════ */
+
+/* ── Avatars ── */
+const AVATARS = ['🛸', '🐸', '🦊', '🐼', '👾', '🤖', '🐲', '💀', '🐙', '⚡', '🍄', '👑'];
+
+/* ── Mode configs ── */
+const MODES = {
+  easy:   { time: 75,  dodge: 1400, proxThresh: 0,  maxMiss: Infinity, label: 'EASY',   spriteSize: 80 },
+  normal: { time: 45,  dodge: 750,  proxThresh: 52, maxMiss: 5,        label: 'NORMAL', spriteSize: 64 },
+  hard:   { time: 30,  dodge: 420,  proxThresh: 68, maxMiss: 3,        label: 'HARD',   spriteSize: 50 },
+};
+
+const SPRITES_BY_MODE = {
+  easy:   { base: '🛸', mid: '⚡', top: '🌟' },
+  normal: { base: '👾', mid: '💥', top: '🔥' },
+  hard:   { base: '💀', mid: '⚠️', top: '☠️'  },
+};
+
+const COLORS = ['#00f5d4','#ffe600','#ff3b5c','#9b5de5','#ffffff'];
+
+/* ── Player profile (persisted) ── */
+let playerName   = localStorage.getItem('dd_name')   || '';
+let playerAvatar = localStorage.getItem('dd_avatar') || AVATARS[0];
+
+/* ── Game state ── */
+let mode      = 'normal';
+let score     = 0;
+let hits      = 0;
+let misses    = 0;
+let combo     = 0;
+let timeLeft  = 0;
+let timerID   = null;
+let dodgeID   = null;
+let isPlaying = false;
+let isPaused  = false;
+let lastPos   = { x: 0, y: 0 };
+let highScore = +localStorage.getItem('dd_hs') || 0;
+
+/* ── DOM ── */
+const arena        = document.getElementById('arena');
+const target       = document.getElementById('target');
+const startScreen  = document.getElementById('startScreen');
+const pauseScreen  = document.getElementById('pauseScreen');
+const gameOverScr  = document.getElementById('gameOverScreen');
+const hud          = document.getElementById('hud');
+const progressWrap = document.getElementById('progressWrap');
+const progressBar  = document.getElementById('progressBar');
+const scoreEl      = document.getElementById('scoreVal');
+const comboEl      = document.getElementById('comboVal');
+const missesEl     = document.getElementById('missesVal');
+const timerEl      = document.getElementById('timerVal');
+const comboBadge   = document.getElementById('comboBadge');
+const pauseBtn     = document.getElementById('pauseBtn');
+const goTitle      = document.getElementById('goTitle');
+const hudAvatar    = document.getElementById('hudAvatar');
+const hudName      = document.getElementById('hudName');
+const nameInput    = document.getElementById('playerNameInput');
+const avatarGrid   = document.getElementById('avatarGrid');
+
+/* ════ AVATAR PICKER ════ */
+
+function buildAvatarGrid() {
+  avatarGrid.innerHTML = '';
+  AVATARS.forEach(av => {
+    const btn = document.createElement('button');
+    btn.className = 'av-btn' + (av === playerAvatar ? ' selected' : '');
+    btn.textContent = av;
+    btn.title = av;
+    btn.addEventListener('click', () => {
+      playerAvatar = av;
+      localStorage.setItem('dd_avatar', av);
+      avatarGrid.querySelectorAll('.av-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+    avatarGrid.appendChild(btn);
+  });
+}
+
+/* Pre-fill name if saved */
+nameInput.value = playerName;
+nameInput.addEventListener('input', () => {
+  playerName = nameInput.value.trim().toUpperCase() || 'PLAYER ONE';
+  localStorage.setItem('dd_name', nameInput.value.trim());
+});
+
+buildAvatarGrid();
+
+/* ════ HELPERS ════ */
+
+function rand(a, b) { return a + Math.random() * (b - a); }
+
+function repositionTarget(smooth) {
+  const aw = arena.clientWidth;
+  const ah = arena.clientHeight;
+  const tw = target.offsetWidth  || 72;
+  const th = target.offsetHeight || 72;
+  const pad = 8;
+
+  target.style.transition = smooth
+    ? 'left 0.10s ease-out, top 0.10s ease-out'
+    : 'none';
+
+  let x, y, tries = 0;
+  do {
+    x = rand(pad, aw - tw - pad);
+    y = rand(pad, ah - th - pad);
+    tries++;
+  } while (tries < 20 &&
+    Math.abs(x - lastPos.x) < tw * 1.3 &&
+    Math.abs(y - lastPos.y) < th * 1.3);
+
+  target.style.left = `${Math.round(x)}px`;
+  target.style.top  = `${Math.round(y)}px`;
+  lastPos = { x, y };
+}
+
+function multiplier() {
+  if (combo >= 6) return 3;
+  if (combo >= 3) return 2;
+  return 1;
+}
+
+function updateSprite() {
+  const s = SPRITES_BY_MODE[mode];
+  target.textContent = combo >= 6 ? s.top : combo >= 3 ? s.mid : s.base;
+}
+
+function refreshHUD() {
+  scoreEl.textContent  = score;
+  missesEl.textContent = misses;
+  comboEl.textContent  = `x${multiplier()}`;
+}
+
+/* ════ FLOAT LABELS ════ */
+
+function spawnLabel(text, x, y, cls) {
+  const el = document.createElement('div');
+  el.className = cls;
+  el.textContent = text;
+  el.style.left = `${Math.round(x)}px`;
+  el.style.top  = `${Math.round(y)}px`;
+  arena.appendChild(el);
+  el.addEventListener('animationend', () => el.remove(), { once: true });
+}
+
+/* ════ PARTICLES ════ */
+
+function burst(screenX, screenY, count) {
+  count = count || 14;
+  for (let i = 0; i < count; i++) {
+    const p = document.createElement('div');
+    p.className = 'pixel-particle';
+    p.style.left = `${screenX}px`;
+    p.style.top  = `${screenY}px`;
+    p.style.background = COLORS[i % COLORS.length];
+    const angle = (i / count) * Math.PI * 2;
+    const dist  = rand(40, 110);
+    p.style.setProperty('--tx', `${(Math.cos(angle) * dist).toFixed(1)}px`);
+    p.style.setProperty('--ty', `${(Math.sin(angle) * dist).toFixed(1)}px`);
+    document.body.appendChild(p);
+    p.addEventListener('animationend', () => p.remove(), { once: true });
+  }
+}
+
+/* ════ COMBO BADGE ════ */
+
+let badgeTimer = null;
+function showComboBadge(text) {
+  comboBadge.textContent = text;
+  comboBadge.classList.add('show');
+  clearTimeout(badgeTimer);
+  badgeTimer = setTimeout(() => comboBadge.classList.remove('show'), 1100);
+}
+
+/* ════ DODGE SCHEDULER ════ */
+
+function scheduleDodge() {
+  clearTimeout(dodgeID);
+  if (!isPlaying || isPaused) return;
+  const delay = MODES[mode].dodge * rand(0.75, 1.25);
+  dodgeID = setTimeout(() => {
+    if (!isPlaying || isPaused) return;
+    repositionTarget(true);
+    scheduleDodge();
+  }, delay);
+}
+
+/* ════ GAME TIMER ════ */
+
+function tickTimer() {
+  if (isPaused) return;
+  timeLeft--;
+  timerEl.textContent = timeLeft;
+  progressBar.style.width = `${(timeLeft / MODES[mode].time) * 100}%`;
+  timerEl.classList.toggle('warn', timeLeft <= 10);
+  if (timeLeft <= 0) endGame('timeout');
+}
+
+/* ════ HIT ════ */
+
+target.addEventListener('click', function(e) {
+  if (!isPlaying || isPaused) return;
+  e.stopPropagation();
+
+  hits++;
+  combo++;
+  const mult = multiplier();
+  const pts  = 10 * mult;
+  score += pts;
+
+  const r  = target.getBoundingClientRect();
+  const ar = arena.getBoundingClientRect();
+  const lx = r.left - ar.left + r.width  / 2;
+  const ly = r.top  - ar.top  + r.height / 2;
+
+  burst(r.left + r.width / 2, r.top + r.height / 2);
+  spawnLabel('+' + pts + (mult > 1 ? ' x' + mult : ''), lx - 16, ly - 24, 'floatScore');
+
+  if (combo === 3)  showComboBadge('🔥 COMBO x2!');
+  if (combo === 6)  showComboBadge('⚡ COMBO x3!');
+  if (combo === 10) showComboBadge('💥 x10 STREAK!');
+
+  target.classList.remove('hit');
+  void target.offsetWidth;
+  target.classList.add('hit');
+  target.addEventListener('animationend', () => target.classList.remove('hit'), { once: true });
+
+  updateSprite();
+  refreshHUD();
+
+  clearTimeout(dodgeID);
+  repositionTarget(false);
+  scheduleDodge();
+});
+
+/* ════ MISS ════ */
+
+arena.addEventListener('click', function(e) {
+  if (!isPlaying || isPaused) return;
+  if (e.target !== arena) return;
+
+  misses++;
+  combo = 0;
+  updateSprite();
+  refreshHUD();
+
+  const ar = arena.getBoundingClientRect();
+  spawnLabel('MISS', e.clientX - ar.left - 14, e.clientY - ar.top - 14, 'missFlash');
+
+  if (misses >= MODES[mode].maxMiss) endGame('missout');
+});
+
+/* ════ PROXIMITY DODGE ════ */
+
+arena.addEventListener('mousemove', function(e) {
+  if (!isPlaying || isPaused) return;
+  const thresh = MODES[mode].proxThresh;
+  if (thresh === 0) return;
+
+  const r  = target.getBoundingClientRect();
+  const cx = r.left + r.width  / 2;
+  const cy = r.top  + r.height / 2;
+  const dx = e.clientX - cx;
+  const dy = e.clientY - cy;
+  if (dx * dx + dy * dy < thresh * thresh) {
+    clearTimeout(dodgeID);
+    repositionTarget(true);
+    scheduleDodge();
+  }
+});
+
+/* ════ PAUSE / RESUME ════ */
+
+function pauseGame() {
+  if (!isPlaying || isPaused) return;
+  isPaused = true;
+  clearTimeout(dodgeID);
+  pauseScreen.classList.remove('hidden');
+  pauseBtn.textContent = '▶ RESUME';
+}
+
+function resumeGame() {
+  if (!isPlaying || !isPaused) return;
+  isPaused = false;
+  pauseScreen.classList.add('hidden');
+  pauseBtn.textContent = '⏸ PAUSE';
+  scheduleDodge();
+}
+
+pauseBtn.addEventListener('click', function() {
+  if (isPaused) resumeGame(); else pauseGame();
+});
+
+document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+
+document.getElementById('quitBtn').addEventListener('click', function() {
+  isPlaying = false;
+  isPaused  = false;
+  clearInterval(timerID);
+  clearTimeout(dodgeID);
+  pauseBtn.textContent = '⏸ PAUSE';
+  showMenu();
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key !== 'Escape' || !isPlaying) return;
+  if (isPaused) resumeGame(); else pauseGame();
+});
+
+/* Keyboard on mode cards */
+document.querySelectorAll('.mode-card').forEach(function(card) {
+  card.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') startGame(card.dataset.mode);
+  });
+  card.addEventListener('click', function() {
+    startGame(card.dataset.mode);
+  });
+});
+
+/* ════ START ════ */
+
+function startGame(selectedMode) {
+  /* Grab latest name from input */
+  var raw = nameInput.value.trim().replace(/\s+/g, ' ').slice(0, 12).toUpperCase();
+  playerName = raw || 'PLAYER ONE';
+  nameInput.value = playerName;
+  localStorage.setItem('dd_name', raw);
+
+  mode      = selectedMode;
+  score     = 0;
+  hits      = 0;
+  misses    = 0;
+  combo     = 0;
+  timeLeft  = MODES[mode].time;
+  isPlaying = true;
+  isPaused  = false;
+
+  /* Sprite size by difficulty */
+  var sz = MODES[mode].spriteSize;
+  target.style.width    = sz + 'px';
+  target.style.height   = sz + 'px';
+  target.style.fontSize = Math.round(sz * 0.60) + 'px';
+
+  /* Show/hide sections */
+  startScreen.classList.add('hidden');
+  gameOverScr.classList.add('hidden');
+  pauseScreen.classList.add('hidden');
+  target.style.display = 'flex';
+
+  hud.classList.add('visible');
+  hud.setAttribute('aria-hidden', 'false');
+  progressWrap.classList.add('visible');
+  progressWrap.setAttribute('aria-hidden', 'false');
+
+  pauseBtn.textContent = '⏸ PAUSE';
+
+  /* Update HUD player chip */
+  hudAvatar.textContent = playerAvatar;
+  hudName.textContent   = playerName;
+
+  timerEl.classList.remove('warn');
+  timerEl.textContent = timeLeft;
+  progressBar.style.width = '100%';
+  comboBadge.classList.remove('show');
+
+  refreshHUD();
+  updateSprite();
+  repositionTarget(false);
+
+  clearInterval(timerID);
+  timerID = setInterval(tickTimer, 1000);
+  scheduleDodge();
+}
+
+/* ════ END ════ */
+
+function endGame(reason) {
+  isPlaying = false;
+  isPaused  = false;
+  clearInterval(timerID);
+  clearTimeout(dodgeID);
+  target.style.display = 'none';
+  pauseScreen.classList.add('hidden');
+
+  hud.classList.remove('visible');
+  hud.setAttribute('aria-hidden', 'true');
+  progressWrap.classList.remove('visible');
+  progressWrap.setAttribute('aria-hidden', 'true');
+
+  if (score > highScore) {
+    highScore = score;
+    localStorage.setItem('dd_hs', highScore);
+  }
+
+  var total    = hits + misses;
+  var accuracy = total === 0 ? 100 : Math.round((hits / total) * 100);
+
+  var rank =
+    accuracy >= 90 ? '⭐⭐⭐  S RANK — INHUMAN' :
+    accuracy >= 70 ? '⭐⭐  A RANK — SHARP'    :
+    accuracy >= 50 ? '⭐  B RANK — DECENT'     :
+                     '   C RANK — KEEP TRYING';
+
+  goTitle.className = 'ov-title';
+  if (reason === 'timeout') {
+    goTitle.textContent = "TIME'S UP!";
+    goTitle.classList.add('cyan');
+  } else {
+    goTitle.textContent = 'TOO MANY MISSES!';
+    goTitle.classList.add('red');
+  }
+
+  var rows = [
+    ['PLAYER',     playerAvatar + ' ' + playerName],
+    ['SCORE',      score],
+    ['HIGH SCORE', highScore],
+    ['HITS',       hits],
+    ['MISSES',     misses],
+    ['ACCURACY',   accuracy + '%'],
+    ['MODE',       MODES[mode].label],
+  ];
+  document.getElementById('statTable').innerHTML = rows.map(function(r) {
+    return '<div class="stat-row"><span class="label">' + r[0] + '</span><span class="val">' + r[1] + '</span></div>';
+  }).join('');
+
+  document.getElementById('goRating').textContent = rank;
+
+  if (accuracy >= 70) {
+    for (var i = 0; i < 8; i++) {
+      (function(i) {
+        setTimeout(function() {
+          burst(rand(80, window.innerWidth - 80), rand(80, window.innerHeight - 80), 10);
+        }, i * 160);
+      })(i);
+    }
+  }
+
+  gameOverScr.classList.remove('hidden');
+}
+
+/* ════ MENU ════ */
+
+function showMenu() {
+  startScreen.classList.remove('hidden');
+  gameOverScr.classList.add('hidden');
+  pauseScreen.classList.add('hidden');
+  target.style.display = 'none';
+
+  hud.classList.remove('visible');
+  hud.setAttribute('aria-hidden', 'true');
+  progressWrap.classList.remove('visible');
+  progressWrap.setAttribute('aria-hidden', 'true');
+
+  score = 0; hits = 0; misses = 0; combo = 0;
+  timerEl.textContent = '--';
+  timerEl.classList.remove('warn');
+  progressBar.style.width = '100%';
+  comboBadge.classList.remove('show');
+}
+
+/* ════ INIT ════ */
+target.style.left    = '-999px';
+target.style.top     = '-999px';
+target.style.display = 'none';
+</script>
+
+</body>
+</html>
