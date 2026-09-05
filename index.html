@@ -151,9 +151,10 @@
     #arena {
       position: relative;
       z-index: 10;
-      width: 90vw;
-      max-width: 700px;
-      height: 420px;
+      width: 94vw;
+      max-width: 1400px;
+      height: min(72vh, 680px);
+      min-height: 520px;
       background: var(--panel);
       border: 2px solid var(--purple);
       border-radius: 4px;
@@ -266,6 +267,16 @@
       width: 100%;
       max-width: 340px;
     }
+
+    /* Keep the menu compact and centered even when the game arena fills the screen. */
+    #startScreen > * {
+      flex-shrink: 0;
+    }
+
+    #startScreen .ov-title {
+      margin-bottom: 2px;
+    }
+
 
     /* Avatar picker */
     .avatar-label {
@@ -406,8 +417,20 @@
       font-weight: normal;
     }
 
+    @media (max-width: 900px) {
+      #arena {
+        width: 94vw;
+        height: 64vh;
+        min-height: 480px;
+      }
+    }
+
     @media (max-width: 520px) {
-      #arena { height: 340px; }
+      #arena {
+        width: 94vw;
+        height: 62vh;
+        min-height: 400px;
+      }
       .mode-grid { grid-template-columns: repeat(2, 1fr); }
     }
   </style>
@@ -573,7 +596,6 @@ let dodgeID   = null;
 let isPlaying = false;
 let isPaused  = false;
 let lastPos   = { x: 0, y: 0 };
-let highScore = +localStorage.getItem('dd_hs') || 0;
 
 /* ── DOM ── */
 const arena        = document.getElementById('arena');
@@ -791,7 +813,7 @@ arena.addEventListener('click', function(e) {
 
 /* ════ PROXIMITY DODGE ════ */
 
-arena.addEventListener('mousemove', function(e) {
+function checkProximityDodge(clientX, clientY) {
   if (!isPlaying || isPaused) return;
   const thresh = MODES[mode].proxThresh;
   if (thresh === 0) return;
@@ -799,14 +821,29 @@ arena.addEventListener('mousemove', function(e) {
   const r  = target.getBoundingClientRect();
   const cx = r.left + r.width  / 2;
   const cy = r.top  + r.height / 2;
-  const dx = e.clientX - cx;
-  const dy = e.clientY - cy;
+  const dx = clientX - cx;
+  const dy = clientY - cy;
   if (dx * dx + dy * dy < thresh * thresh) {
     clearTimeout(dodgeID);
     repositionTarget(true);
     scheduleDodge();
   }
+}
+
+arena.addEventListener('mousemove', function(e) {
+  checkProximityDodge(e.clientX, e.clientY);
 });
+
+/* Touch equivalent — without this, proximity-dodge (normal/hard modes)
+   silently never fired for touchscreen users, since touch input never
+   generates mousemove events. */
+arena.addEventListener('touchmove', function(e) {
+  if (!isPlaying || isPaused) return;
+  const t = e.touches[0];
+  if (!t) return;
+  checkProximityDodge(t.clientX, t.clientY);
+  e.preventDefault(); /* stop the page from scrolling while dragging inside the arena */
+}, { passive: false });
 
 /* ════ PAUSE / RESUME ════ */
 
@@ -841,9 +878,52 @@ document.getElementById('quitBtn').addEventListener('click', function() {
   showMenu();
 });
 
+/* ════ GAME OVER: RETRY / MENU ════
+   These buttons existed in the HTML but were never wired up — that was
+   the reason "Retry" and "Menu" did nothing after a round ended. */
+document.getElementById('retryBtn').addEventListener('click', function() {
+  gameOverScr.classList.add('hidden');
+  startGame(mode);
+});
+
+document.getElementById('menuBtn').addEventListener('click', function() {
+  isPlaying = false;
+  isPaused  = false;
+  clearInterval(timerID);
+  clearTimeout(dodgeID);
+  showMenu();
+});
+
 document.addEventListener('keydown', function(e) {
-  if (e.key !== 'Escape' || !isPlaying) return;
-  if (isPaused) resumeGame(); else pauseGame();
+  /* During active play: Escape toggles pause */
+  if (isPlaying) {
+    if (e.key === 'Escape') {
+      if (isPaused) resumeGame(); else pauseGame();
+    }
+    return;
+  }
+
+  /* On the game-over screen: Enter = retry, Escape = menu */
+  if (!gameOverScr.classList.contains('hidden')) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      gameOverScr.classList.add('hidden');
+      startGame(mode);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      showMenu();
+    }
+  }
+});
+
+/* ════ AUTO-PAUSE ON TAB/WINDOW BLUR ════
+   Without this, switching tabs or apps mid-game let the dodge timer and
+   countdown keep running, so players came back to unfair misses/timeouts. */
+document.addEventListener('visibilitychange', function() {
+  if (document.hidden && isPlaying && !isPaused) pauseGame();
+});
+window.addEventListener('blur', function() {
+  if (isPlaying && !isPaused) pauseGame();
 });
 
 /* Keyboard on mode cards */
@@ -926,11 +1006,6 @@ function endGame(reason) {
   progressWrap.classList.remove('visible');
   progressWrap.setAttribute('aria-hidden', 'true');
 
-  if (score > highScore) {
-    highScore = score;
-    localStorage.setItem('dd_hs', highScore);
-  }
-
   var total    = hits + misses;
   var accuracy = total === 0 ? 100 : Math.round((hits / total) * 100);
 
@@ -952,7 +1027,6 @@ function endGame(reason) {
   var rows = [
     ['PLAYER',     playerAvatar + ' ' + playerName],
     ['SCORE',      score],
-    ['HIGH SCORE', highScore],
     ['HITS',       hits],
     ['MISSES',     misses],
     ['ACCURACY',   accuracy + '%'],
@@ -991,6 +1065,7 @@ function showMenu() {
   progressWrap.setAttribute('aria-hidden', 'true');
 
   score = 0; hits = 0; misses = 0; combo = 0;
+  lastPos = { x: 0, y: 0 };
   timerEl.textContent = '--';
   timerEl.classList.remove('warn');
   progressBar.style.width = '100%';
